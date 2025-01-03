@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { EvalComponent } from "@/components/EvalComponent";
+import type { JsonValue } from "./types";
 
 class Message {
   role: "user" | "ai" | "system" | "tool";
@@ -13,39 +14,42 @@ class Message {
   }
 }
 
-class Suggestion {
-  source: string;
-  prompt: string;
+type Conversation = {
+  id: string;
+  messages: Message[];
+  createdAt: Date;
+  title: string;
+};
 
-  constructor(source: string, prompt: string) {
-    this.source = source;
-    this.prompt = prompt;
-  }
-}
 const defaultSuggestions = [
-  new Suggestion(
-    "https://pubmed.ncbi.nlm.nih.gov/39645377/",
-    "Summarize a medical Publication"
-  ),
-  new Suggestion(
-    "https://www.investopedia.com/articles/investing/080615/how-to-use-chatbots-in-trading.html",
-    "Explain how to use a chatbot for trading"
-  ),
-  new Suggestion(
-    "https://blog.google/technology/google-deepmind/google-gemini-ai-update-december-2024/#ceo-message",
-    "What's new in Gemini"
-  ),
+  "Who can I claim as dependents",
+  "Summarize a publication https://www.irs.gov/pub/irs-pdf/p17.pdf",
+  "What's new in Gemini https://blog.google/technology/google-deepmind/google-gemini-ai-update-december-2024/#ceo-message",
 ];
 
 export default function Home() {
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState([
     { role: "ai", content: "Hello! How can I help you today?" },
   ]);
+  const [messagesHistory, setMessagesHistory] = useState<Conversation>({
+    id: crypto.randomUUID(),
+    messages: [new Message("ai", "Hello! How can I help you today?")],
+    createdAt: new Date(),
+    title: "New Chat",
+  });
   const [isLoading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions);
+  const [error, setError] = useState(null);
+  const [trace, setTrace] = useState<string[]>([]);
 
   const handleKeyPress = () => {
     console.log("TODO: Implement later");
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setMessage(suggestion);
+    console.log(`TODO: Implement later, ${suggestion}`);
   };
 
   const handleSend = async () => {
@@ -56,6 +60,9 @@ export default function Home() {
     setMessages(prev => [...prev, userMessage]);
     setMessage("");
     setIsLoading(true);
+    setError(null);
+    setSuggestions([]); // Clear suggestions after sending a message
+    setTrace([]);
 
     try {
       const response = await fetch("/api/chat", {
@@ -66,9 +73,34 @@ export default function Home() {
         body: JSON.stringify({ message }),
       });
 
-      // TODO: Handle the response from the chat API to display the AI response in the UI
+      if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No reader from response body");
+
+      const decoder = new TextDecoder();
+
+      await reader.read().then(async function processText({ done, value }) {
+        if (done) return;
+
+        const chunk = decoder.decode(value, { stream: true });
+        console.log("Chunks decoded:", chunk);
+
+        setTrace(prev => {
+          return [...prev, chunk];
+        });
+
+        //????????????????????????????????
+        //  TODO: Store tracing information in database
+
+        await reader.read().then(processText);
+      });
     } catch (error) {
-      console.error("Error:", error);
+      console.error("Error during fetch:", error);
+      setMessages(prevMessages => [
+        ...prevMessages,
+        new Message("system", "An error occurred. Please try again."),
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -128,7 +160,7 @@ export default function Home() {
         </div>
 
         {/* Evaluation Column */}
-        <EvalComponent />
+        <EvalComponent eval={trace} />
       </div>
 
       {/* Footer Area */}
@@ -143,20 +175,51 @@ export default function Home() {
                 bg-gradient-to-r from-[#201cff] to-[#13ef95]"
         />
         <div className="max-w-3xl mx-auto">
-          {/* Suggestion area*/}
-          <div className="flex gap-2 mb-3 overflow-x-auto pb-2 hide-scrollbar -mx-2 px-2">
-            {defaultSuggestions.map((suggestion, index) => (
-              <button
-                key={index}
-                className="flex gap-2 p-2 text-gray-400 hover:text-gray-600 border border-gray-700"
-                onClick={() =>
-                  setMessage(`${suggestion.prompt} ${suggestion.source}`)
-                }
-              >
-                {suggestion.prompt}
-              </button>
-            ))}
-          </div>
+          {/* Suggestions Area */}
+          {suggestions.length > 0 && (
+            <div className="py-4 animate-slideUp">
+              <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-center gap-3 px-16 lg:px-24">
+                {suggestions.slice(0, 3).map((suggestion, index) => (
+                  <div
+                    key={index}
+                    className="group relative transform transition-all duration-300 hover:scale-105"
+                  >
+                    <button
+                      onClick={() => handleSuggestionClick(suggestion)}
+                      className="px-5 py-2.5 bg-gray-800/40 hover:bg-[#13ef95]
+              rounded-full text-sm text-gray-300 hover:text-white
+              transition-all border border-white/10 hover:border-cyan-500/30
+              backdrop-blur-sm shadow-lg shadow-black/20 hover:shadow-cyan-500/20
+              flex items-center justify-center gap-2 group"
+                    >
+                      <span className="truncate max-w-[200px]">
+                        {suggestion.length > 40
+                          ? suggestion.substring(0, 37) + "..."
+                          : suggestion}
+                      </span>
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-cyan-400">
+                        ↗
+                      </span>
+                    </button>
+                    <div
+                      className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 
+            scale-90 opacity-0 group-hover:scale-100 group-hover:opacity-100 
+            transition-all duration-300 ease-out pointer-events-none"
+                    >
+                      <div
+                        className="bg-gray-900/90 border border-white/10 px-4 py-2.5 
+              rounded-xl shadow-2xl backdrop-blur-xl 
+              text-sm text-gray-200 max-w-xs whitespace-normal
+              animate-tooltipAppear"
+                      >
+                        {suggestion}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Input Field Area */}
           <div className="flex gap-3 items-center">
