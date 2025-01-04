@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { EvalComponent } from "@/components/EvalComponent";
-import type { JsonValue } from "./types";
+import { example1 } from "@/testcases/example";
 
 class Message {
   role: "user" | "ai" | "system" | "tool";
@@ -21,11 +21,7 @@ type Conversation = {
   title: string;
 };
 
-const defaultSuggestions = [
-  "Who can I claim as dependents",
-  "Summarize a publication https://www.irs.gov/pub/irs-pdf/p17.pdf",
-  "What's new in Gemini https://blog.google/technology/google-deepmind/google-gemini-ai-update-december-2024/#ceo-message",
-];
+const defaultSuggestions = example1.map(example => example[0]);
 
 export default function Home() {
   const [message, setMessage] = useState("");
@@ -39,7 +35,7 @@ export default function Home() {
     title: "New Chat",
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions);
+  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions.slice(0, 4));
   const [error, setError] = useState(null);
   const [trace, setTrace] = useState<string[]>([]);
 
@@ -50,6 +46,14 @@ export default function Home() {
   const handleSuggestionClick = (suggestion: string) => {
     setMessage(suggestion);
     console.log(`TODO: Implement later, ${suggestion}`);
+    // Shuffle the array
+    const shuffled = [...suggestions].sort(() => 0.5 - Math.random());
+
+    // Select the first 4 elements
+    const selected = shuffled.slice(0, 4);
+
+    // Set the suggestions
+    setSuggestions(selected);
   };
 
   const handleSend = async () => {
@@ -61,7 +65,7 @@ export default function Home() {
     setMessage("");
     setIsLoading(true);
     setError(null);
-    setSuggestions([]); // Clear suggestions after sending a message
+    // setSuggestions([]);
     setTrace([]);
 
     try {
@@ -84,14 +88,7 @@ export default function Home() {
         if (done) return;
 
         const chunk = decoder.decode(value, { stream: true });
-        console.log("Chunks decoded:", chunk);
-
-        setTrace(prev => {
-          return [...prev, chunk];
-        });
-
-        //????????????????????????????????
-        //  TODO: Store tracing information in database
+        setTrace(prev => [...prev, chunk]);
 
         await reader.read().then(processText);
       });
@@ -108,13 +105,54 @@ export default function Home() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  // When trace updates, process the last chunk and update the messages
+  useEffect(() => {
+    console.log("Trace updated:", trace);
+
+    if (trace.length > 0 && trace[trace.length - 1].includes("generate")) {
+      try {
+        const lastChunk = JSON.parse(trace[trace.length - 1]);
+        console.log("Last chunk processed:", lastChunk);
+
+        setMessages(prevMessages => {
+          // Avoid duplicate updates
+          if (
+            prevMessages.length > 0 &&
+            prevMessages[prevMessages.length - 1].content ===
+              lastChunk.response.generation
+          ) {
+            console.log("Skipping duplicate message update");
+            return prevMessages;
+          }
+
+          return [
+            ...prevMessages,
+            new Message("ai", lastChunk.response.generation),
+          ];
+        });
+      } catch (error) {
+        console.error("Failed to process last chunk:", error);
+      }
+    }
+  }, [trace]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
   return (
-    <div className="flex flex-col h-screen bg-[#141720]">
+    <div className="flex flex-col min-h-screen bg-[#141720]">
       {/* Header */}
       <div
         className="w-full  p-4
       bg-[#101014]
-        border-b border-gray-700"
+      border-b border-gray-700"
       >
         <div className="max-w-4xl mx-auto">
           <h1 className="text-xl font-semibold text-white">
@@ -126,7 +164,7 @@ export default function Home() {
         className="relative top-0 left-0 w-full h-[1px]
                 bg-gradient-to-r from-[#201cff] to-[#13ef95]"
       />
-      <div className="flex flex-col md:flex-row h-screen">
+      <div className="flex flex-col md:flex-row flex-grow">
         {/* Messages Column */}
         <div className="flex-1 md:w-1/2 overflow-auto pb-32 pt-4">
           <div className="max-w-4xl mx-auto p-6">
@@ -160,10 +198,12 @@ export default function Home() {
         </div>
 
         {/* Evaluation Column */}
-        <EvalComponent eval={trace} />
+        <div className="flex-1 md:w-1/2 overflow-auto bg-[#101014] p-4">
+          <EvalComponent eval={trace} />
+        </div>
       </div>
 
-      {/* Footer Area */}
+      {/* Chat Input Area */}
       <div
         className="fixed 
         bottom-0 w-full p-4
@@ -172,14 +212,14 @@ export default function Home() {
       >
         <div
           className="absolute top-0 left-0 w-full h-[1px]
-                bg-gradient-to-r from-[#201cff] to-[#13ef95]"
+              bg-gradient-to-r from-[#201cff] to-[#13ef95]"
         />
-        <div className="max-w-3xl mx-auto">
+        <div className="mx-auto">
           {/* Suggestions Area */}
           {suggestions.length > 0 && (
             <div className="py-4 animate-slideUp">
-              <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-center gap-3 px-16 lg:px-24">
-                {suggestions.slice(0, 3).map((suggestion, index) => (
+              <div className="mx-auto flex flex-wrap items-center justify-center gap-3 px-16 lg:px-24">
+                {suggestions.map((suggestion, index) => (
                   <div
                     key={index}
                     className="group relative transform transition-all duration-300 hover:scale-105"

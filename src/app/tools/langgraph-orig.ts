@@ -1,89 +1,21 @@
-import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
-import { Document } from "@langchain/core/documents";
-import { z } from "zod";
-import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
-import { pull } from "langchain/hub";
-import { ChatOpenAI } from "@langchain/openai";
+import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+import { Document, DocumentInterface } from "@langchain/core/documents";
 import { StringOutputParser } from "@langchain/core/output_parsers";
-import { formatDocumentsAsString } from "langchain/util/document";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Annotation } from "@langchain/langgraph";
-import { DocumentInterface } from "@langchain/core/documents";
+import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { WebPDFLoader } from "@langchain/community/document_loaders/web/pdf";
-import { ParentDocumentRetriever } from "langchain/retrievers/parent_document";
-import { ScoreThresholdRetriever } from "langchain/retrievers/score_threshold";
-import { InMemoryStore } from "@langchain/core/stores";
-import { pcVectorStore } from "./pinecone";
+import { pull } from "langchain/hub";
+import { formatDocumentsAsString } from "langchain/util/document";
 import { MemoryVectorStore } from "langchain/vectorstores/memory";
-import { OpenAIEmbeddings } from "@langchain/openai";
-
-/******************************** PDF LOADER *******************************************************
- *
- * https://js.langchain.com/docs/integrations/document_loaders/web_loaders/pdf/
- *
- ***********************************************************************************************/
-
-export async function loadWebPDF(url: string) {
-  // Fetch the PDF from the URL
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch PDF from URL: ${response.statusText}`);
-  }
-
-  // Get the PDF as a Blob
-  const pdfBlob = await response.blob();
-
-  // Initialize the WebPDFLoader with the Blob
-  const loader = new WebPDFLoader(pdfBlob, {
-    parsedItemSeparator: "",
-    splitPages: true, // Reduce excessive whitespaces
-  });
-
-  // Load the documents
-  const docs = await loader.load();
-  return docs;
-}
+import { z } from "zod";
 
 /******************************** CORRECTIVE RAG *******************************************************
  *
  * https://langchain-ai.github.io/langgraphjs/tutorials/rag/langgraph_crag/#nodes-and-edges
  *
  ***********************************************************************************************/
-
-export const getRetriever = () => {
-  const byteStore = new InMemoryStore<Uint8Array>();
-  const parentSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 2500,
-    chunkOverlap: 250,
-  });
-  const childSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: 500,
-    chunkOverlap: 50,
-  });
-
-  // With Relevance Score Threshold
-  const childDocumentRetriever = ScoreThresholdRetriever.fromVectorStore(
-    pcVectorStore,
-    {
-      minSimilarityScore: 0.78,
-    }
-  );
-
-  //  Instantiate VectorStore or Retriever
-  return new ParentDocumentRetriever({
-    vectorstore: pcVectorStore,
-    byteStore,
-    childDocumentRetriever,
-    parentSplitter: parentSplitter,
-    childSplitter: childSplitter,
-    // parent documents returned from this retriever and sent to LLM.
-    // This is an upper-bound, and the final count may be lower than this.
-    parentK: 5,
-    childK: 20,
-  });
-};
 
 const urls = [
   "https://www.irs.gov/publications/p17",
@@ -138,75 +70,13 @@ async function retrieve(
   state: typeof GraphState.State
 ): Promise<Partial<typeof GraphState.State>> {
   console.log("---RETRIEVE---");
-  const startRetrievalTime = Date.now();
 
   const documents = await retriever
     .withConfig({ runName: "FetchRelevantDocuments" })
     .invoke(state.question);
 
-  const endRetrievalTime = Date.now() - startRetrievalTime;
-  const aveRetrievalTime = endRetrievalTime / documents.length;
-
-  console.log("---CHECK RELEVANCE---");
-
-  // pass the name & schema to `withStructuredOutput` which will force the model to call this tool.
-  const llmWithTool = model.withStructuredOutput(
-    z
-      .object({
-        score: z.enum(["yes", "no"]).describe("Relevance score 'yes' or 'no'"),
-        explanation: z
-          .string()
-          .describe("explain briefly the reason why it's not relevant"),
-      })
-      .describe(
-        "Grade the relevance of the retrieved documents to the question. Either 'yes' or 'no'."
-      ),
-    {
-      name: "grade",
-    }
-  );
-
-  const prompt = ChatPromptTemplate.fromTemplate(
-    `You are a grader assessing relevance of a retrieved document to a user question.
-  Here is the retrieved document:
-
-  {context}
-
-  Here is the user question: {question}
-
-  If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant.
-  Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question.`
-  );
-
-  const chain = prompt.pipe(llmWithTool);
-
-  // For every retrieved document, evaluate the results for retrieval relevance
-  const gradedDocs: Array<DocumentInterface> = [];
-
-  for await (const doc of documents) {
-    const startGrade = Date.now();
-    const grade = await chain.invoke({
-      context: doc.pageContent,
-      question: state.question,
-    });
-
-    console.log(`Grade for document":`, grade);
-    gradedDocs.push(
-      new Document({
-        pageContent: doc.pageContent,
-        metadata: {
-          ...doc.metadata, // Preserve existing metadata
-          score: grade.score, // Add the score to metadata
-          latency: aveRetrievalTime + (Date.now() - startGrade),
-          explanation: grade.explanation, // Add the explanation to metadata
-        },
-      })
-    );
-  }
-  console.log("graded documents: ", gradedDocs);
-
   return {
-    documents: gradedDocs,
+    documents,
   };
 }
 
@@ -222,13 +92,7 @@ async function generate(
 ): Promise<Partial<typeof GraphState.State>> {
   console.log("---GENERATE---");
 
-  const prompt = await ChatPromptTemplate.fromTemplate(
-    `You are a helpful assistant who is good at analyzing source information and answering questions.
-        Use the following source documents to answer the user's questions.
-        If you don't know the answer, just say that you don't know.
-        Documents:
-        ${state.documents.map(doc => doc.pageContent).join("\n\n")}`
-  );
+  const prompt = await pull<ChatPromptTemplate>("rlm/rag-prompt");
   // Construct the RAG chain by piping the prompt, model, and output parser
   const ragChain = prompt.pipe(model).pipe(new StringOutputParser());
 
@@ -379,38 +243,6 @@ function decideToGenerate(state: typeof GraphState.State) {
   console.log("---DECISION: GENERATE---");
   return "generate";
 }
-
-/******************************** EVALUATIONS *********************************************
- *
- *
- *
- ***********************************************************************************************/
-import { example1 } from "@/testcases/example";
-import { Client } from "langsmith";
-const client = new Client();
-
-// Create a dataset and examples
-async function createExamples(state: typeof GraphState.State) {
-  const inputs = example1.map(([inputPrompt]) => ({
-    question: inputPrompt,
-  }));
-  const outputs = example1.map(([, outputAnswer]) => ({
-    answer: outputAnswer,
-  }));
-
-  // Programmatically create a dataset in LangSmith
-  const datasetName = "Individual Income Tax 2024";
-  const dataDescription =
-    "Sample Q&A dataset from IRS publications for individual income tax in 2024.";
-  const dataset = await client.createDataset(datasetName);
-  await client.createExamples({ inputs, outputs, datasetId: dataset.id });
-}
-
-/******************************** SETTING THE GRAPH *********************************************
- *
- *
- *
- ***********************************************************************************************/
 
 import { END, START, StateGraph } from "@langchain/langgraph";
 

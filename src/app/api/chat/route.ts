@@ -25,7 +25,6 @@ export async function POST(req: Request) {
               node: key,
               response: value,
             });
-            console.log(content);
             controller.enqueue(new TextEncoder().encode(content));
           }
         }

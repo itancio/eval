@@ -6,6 +6,7 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 
 export function EvalComponent({ eval: evalChunks }: { eval: string[] }) {
   // Parse all chunks
@@ -41,7 +42,7 @@ export function EvalComponent({ eval: evalChunks }: { eval: string[] }) {
           return (
             <AccordionItem key={`${node}-${index}`} value={`item-${index}`}>
               <AccordionTrigger>
-                <div className="text-lg font-semibold text-white mb-2">
+                <div className="font-semibold text-white mb-2">
                   Task: {node}
                 </div>
               </AccordionTrigger>
@@ -74,6 +75,21 @@ export function EvalComponent({ eval: evalChunks }: { eval: string[] }) {
                           <div>Content: {doc.pageContent || "N/A"}</div>
                           <div>Source: {doc.metadata?.source || "N/A"}</div>
                           <div>Title: {doc.metadata?.title || "N/A"}</div>
+                          <div>
+                            Explanation: {doc.metadata?.explanation || "N/A"}
+                          </div>
+
+                          <div className="flex text-cyan-400 gap-2 m-5">
+                            <Badge variant="secondary">
+                              Relevant: {doc.metadata?.score || "N/A"}
+                            </Badge>
+                            <Badge variant="secondary">
+                              Latency: {doc.metadata?.latency || "N/A"} ms
+                            </Badge>
+                            <Badge variant="secondary">
+                              Total tokens used: 1500
+                            </Badge>
+                          </div>
                         </div>
                       ))}
                     </div>
