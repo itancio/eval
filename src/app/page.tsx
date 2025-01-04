@@ -35,7 +35,9 @@ export default function Home() {
     title: "New Chat",
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>(defaultSuggestions.slice(0, 4));
+  const [suggestions, setSuggestions] = useState<string[]>(
+    defaultSuggestions.slice(0, 4)
+  );
   const [error, setError] = useState(null);
   const [trace, setTrace] = useState<string[]>([]);
 
@@ -45,7 +47,6 @@ export default function Home() {
 
   const handleSuggestionClick = (suggestion: string) => {
     setMessage(suggestion);
-    console.log(`TODO: Implement later, ${suggestion}`);
     // Shuffle the array
     const shuffled = [...suggestions].sort(() => 0.5 - Math.random());
 
@@ -199,7 +200,7 @@ export default function Home() {
 
         {/* Evaluation Column */}
         <div className="flex-1 md:w-1/2 overflow-auto bg-[#101014] p-4">
-          <EvalComponent eval={trace} />
+          <EvalComponent eval={trace}/>
         </div>
       </div>
 

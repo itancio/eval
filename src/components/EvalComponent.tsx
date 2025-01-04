@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 
 export function EvalComponent({ eval: evalChunks }: { eval: string[] }) {
   // Parse all chunks
+  console.log(evalChunks, typeof evalChunks);
   const evaluations = evalChunks.map((chunk, index) => {
     try {
       return JSON.parse(chunk);
@@ -80,9 +81,16 @@ export function EvalComponent({ eval: evalChunks }: { eval: string[] }) {
                           </div>
 
                           <div className="flex text-cyan-400 gap-2 m-5">
-                            <Badge variant="secondary">
+                            <Badge
+                              variant={
+                                doc.metadata?.score === "yes"
+                                  ? "secondary"
+                                  : "destructive"
+                              }
+                            >
                               Relevant: {doc.metadata?.score || "N/A"}
                             </Badge>
+
                             <Badge variant="secondary">
                               Latency: {doc.metadata?.latency || "N/A"} ms
                             </Badge>

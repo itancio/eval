@@ -25,6 +25,7 @@ export async function POST(req: Request) {
               node: key,
               response: value,
             });
+            // console.log("chunk content: " + content);
             controller.enqueue(new TextEncoder().encode(content));
           }
         }

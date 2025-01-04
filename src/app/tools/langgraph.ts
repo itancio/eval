@@ -203,7 +203,7 @@ async function retrieve(
       })
     );
   }
-  console.log("graded documents: ", gradedDocs);
+  // console.log("graded documents: ", gradedDocs);
 
   return {
     documents: gradedDocs,
@@ -242,8 +242,7 @@ async function generate(
   };
 }
 
-/**
- * Determines whether the retrieved documents are relevant to the question.
+/* Determines whether the retrieved documents are relevant to the question.
  *
  * @param {typeof GraphState.State} state The current state of the graph.
  * @param {RunnableConfig | undefined} config The configuration object for tracing.
@@ -292,6 +291,32 @@ async function gradeDocuments(
       question: state.question,
     });
     if (grade.binaryScore === "yes") {
+      console.log("---GRADE: DOCUMENT RELEVANT---");
+      filteredDocs.push(doc);
+    } else {
+      console.log("---GRADE: DOCUMENT NOT RELEVANT---");
+    }
+  }
+
+  return {
+    documents: filteredDocs,
+  };
+}
+
+/* Filter relevant documents
+ *
+ * @param {typeof GraphState.State} state The current state of the graph.
+ * @param {RunnableConfig | undefined} config The configuration object for tracing.
+ * @returns {Promise<Partial<typeof GraphState.State>>} The new state object.
+ */
+async function filterDocuments(
+  state: typeof GraphState.State
+): Promise<Partial<typeof GraphState.State>> {
+  console.log("---FILTER RELEVANT DOCUMENTS---");
+
+  const filteredDocs: Array<DocumentInterface> = [];
+  for await (const doc of state.documents) {
+    if (doc.metadata?.score === "yes") {
       console.log("---GRADE: DOCUMENT RELEVANT---");
       filteredDocs.push(doc);
     } else {
